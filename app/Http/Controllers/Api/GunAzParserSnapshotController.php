@@ -1028,8 +1028,8 @@ class GunAzParserSnapshotController extends Controller
             }
 
             $latest = $series->first();
-            $weekBase = $this->oldestSnapshotWithinWindow($series, $latest, 7);
-            $monthBase = $this->oldestSnapshotWithinWindow($series, $latest, 30);
+            $weekBase = $this->nearestSnapshotInRange($series, $latest, 7, 5, 9);
+            $monthBase = $this->nearestSnapshotInRange($series, $latest, 30, 26, 32);
             [, $weekPct] = $this->computeDeltaPair(
                 (float) $latest->avg_price,
                 $weekBase ? (float) $weekBase->avg_price : null
@@ -1050,13 +1050,21 @@ class GunAzParserSnapshotController extends Controller
      * @param  object{snapshot_date: Carbon, avg_price: float}  $latest
      * @return object{snapshot_date: Carbon, avg_price: float}|null
      */
-    private function oldestSnapshotWithinWindow(Collection $rows, object $latest, int $days): ?object
+    private function nearestSnapshotInRange(Collection $rows, object $latest, int $targetDays, int $minDays, int $maxDays): ?object
     {
-        $targetDate = $latest->snapshot_date->copy()->subDays($days);
-    
-        return $rows
+        $rangeStart = $latest->snapshot_date->copy()->subDays($maxDays)->startOfDay();
+        $rangeEnd = $latest->snapshot_date->copy()->subDays($minDays)->endOfDay();
+        $target = $latest->snapshot_date->copy()->subDays($targetDays);
+
+        $candidates = $rows
             ->skip(1) // latest-i çıxarırıq (əgər ilkdirsə)
-            ->first(fn ($r) => $r->snapshot_date->isSameDay($targetDate));
+            ->filter(fn ($r) => $r->snapshot_date->gte($rangeStart) && $r->snapshot_date->lte($rangeEnd));
+
+        if ($candidates->isEmpty()) {
+            return null;
+        }
+
+        return $candidates->sortBy(fn ($r) => abs($r->snapshot_date->getTimestamp() - $target->getTimestamp()))->first();
     }
 
     /**
