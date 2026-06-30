@@ -27,7 +27,7 @@ class PositionFailure extends Model
     protected function casts(): array
     {
         return [
-            'failure_date' => 'date',
+            'failure_date' => 'date:Y-m-d',
             'created_at' => 'datetime',
         ];
     }

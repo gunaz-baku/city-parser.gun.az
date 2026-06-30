@@ -36,7 +36,7 @@ class SourcePriceResult extends Model
     protected function casts(): array
     {
         return [
-            'result_date' => 'date',
+            'result_date' => 'date:Y-m-d',
             'raw_price' => 'decimal:4',
             'raw_area' => 'decimal:4',
             'normalized_price' => 'decimal:4',

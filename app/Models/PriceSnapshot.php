@@ -26,7 +26,7 @@ class PriceSnapshot extends Model
     protected function casts(): array
     {
         return [
-            'snapshot_date' => 'date',
+            'snapshot_date' => 'date:Y-m-d',
             'price_min' => 'decimal:4',
             'price_max' => 'decimal:4',
             'price_avg' => 'decimal:4',

@@ -22,7 +22,7 @@ class BasketSnapshot extends Model
     protected function casts(): array
     {
         return [
-            'snapshot_date' => 'date',
+            'snapshot_date' => 'date:Y-m-d',
             'total_price' => 'decimal:4',
             'dolma_index_total' => 'decimal:4',
             'synced_at' => 'datetime',

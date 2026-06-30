@@ -466,6 +466,7 @@ class GunAzParserSnapshotController extends Controller
         /** @var array<int, array{latest: ?object, week_base: ?object}> $snapByPos */
         $snapByPos = [];
         $snapshotsByPos = $snapshots->groupBy(fn ($row) => (int) $row->position_id);
+        $today = Carbon::today();
         foreach ($snapshotsByPos as $pid => $posRows) {
             $latest = $posRows->first();
             if ($latest === null) {
@@ -474,14 +475,33 @@ class GunAzParserSnapshotController extends Controller
             }
 
             $latestDate = Carbon::parse((string) $latest->snapshot_date)->startOfDay();
-            $weekThreshold = $latestDate->copy()->subDays(7);
-            $weekBase = $posRows->first(function ($row) use ($weekThreshold) {
-                if (! isset($row->snapshot_date)) {
-                    return false;
-                }
 
-                return Carbon::parse((string) $row->snapshot_date)->startOfDay()->lte($weekThreshold);
-            });
+            // Mövqənin son snapshot-u artıq həftədən köhnədirsə, son bir həftə ərzində
+            // heç bir qiymət dəyişikliyi baş vermədiyi göstərilir (trend = neutral).
+            if ($latestDate->lt($today->copy()->subDays(7))) {
+                $snapByPos[(int) $pid] = ['latest' => $latest, 'week_base' => null];
+                continue;
+            }
+
+            // Bazis nöqtəsi həqiqətən "bir həftə əvvəl"-ə yaxın olmalıdır (5-9 gün aralığı).
+            // Aradakı boşluq daha böyükdürsə (məs. son snapshot-dan əvvəlki 14 gün əvvələ aiddir),
+            // bunu etibarlı "həftəlik" müqayisə hesab etmirik — trend neytral qalır.
+            $rangeStart = $latestDate->copy()->subDays(9)->startOfDay();
+            $rangeEnd = $latestDate->copy()->subDays(5)->endOfDay();
+            $target = $latestDate->copy()->subDays(7);
+
+            $weekBase = $posRows
+                ->skip(1)
+                ->filter(function ($row) use ($rangeStart, $rangeEnd) {
+                    if (! isset($row->snapshot_date)) {
+                        return false;
+                    }
+                    $d = Carbon::parse((string) $row->snapshot_date)->startOfDay();
+
+                    return $d->gte($rangeStart) && $d->lte($rangeEnd);
+                })
+                ->sortBy(fn ($row) => abs(Carbon::parse((string) $row->snapshot_date)->getTimestamp() - $target->getTimestamp()))
+                ->first();
 
             $snapByPos[(int) $pid] = ['latest' => $latest, 'week_base' => $weekBase];
         }
