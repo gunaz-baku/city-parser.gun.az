@@ -24,62 +24,6 @@ use Illuminate\Support\Str;
 
 class GunAzParserSnapshotController extends Controller
 {
-    /**
-     * Son uğurlu parse günlüyü: DB-də ən son snapshot tarixi (eyni mühitdə son run-un yazdığı gün).
-     */
-    private function latestSnapshotDateStringForGunAzReference(?string $parserType): ?string
-    {
-        $q = DB::table('price_snapshots');
-        if ($parserType !== null && $parserType !== '') {
-            $q->where('parser_type', $parserType);
-        }
-        $max = $q->max('snapshot_date');
-        if ($max === null) {
-            return null;
-        }
-
-        try {
-            return Carbon::parse((string) $max)->toDateString();
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    private function snapshotDateMatchesReferenceDay(mixed $snapshotDate, ?string $referenceDateStr): bool
-    {
-        if ($referenceDateStr === null || $referenceDateStr === '') {
-            return false;
-        }
-        if ($snapshotDate === null || $snapshotDate === '') {
-            return false;
-        }
-        try {
-            return Carbon::parse((string) $snapshotDate)->toDateString() === $referenceDateStr;
-        } catch (\Throwable) {
-            return false;
-        }
-    }
-
-    /**
-     * Mövqənin son snapshot-u istinad tarixi ilə üst-üstə düşmədikdə qiymət göndərilmir (GunAz «—»).
-     *
-     * @param  array<string, mixed>  $row
-     * @return array<string, mixed>
-     */
-    private function stripCityAverageRowPricesWhenNotReferenceDay(array $row): array
-    {
-        $row['avg_display_price'] = null;
-        $row['price_min'] = null;
-        $row['price_max'] = null;
-        $row['price_avg'] = null;
-        $row['price_avg_7_days_ago'] = null;
-        $row['price_avg_30_days_ago'] = null;
-        $row['sample_size'] = 0;
-        $row['source_count'] = 0;
-
-        return $row;
-    }
-
     public function pullPriceSnapshots(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -926,33 +870,16 @@ class GunAzParserSnapshotController extends Controller
         $positionIds = $rows->pluck('position_id')->filter()->map(fn ($v) => (int) $v)->unique()->values()->all();
         $deltasByPosition = $this->buildPositionDeltasForAveragesRows($positionIds);
 
-        $hideStalePrices = ! isset($validated['snapshot_date']);
-        $parserTypeForRef = isset($validated['parser_type']) ? (string) $validated['parser_type'] : null;
-        $referenceSnapshotDateStr = $hideStalePrices
-            ? $this->latestSnapshotDateStringForGunAzReference($parserTypeForRef)
-            : null;
-
         return [
             'city' => $this->formatCityBlock($cityRow),
             'snapshot_date' => $snapshotDateOut,
-            'meta' => array_merge([
+            'meta' => [
                 'updated_display' => $snapshotDateOut !== null
                     ? Carbon::parse($snapshotDateOut)->format('d.m.Y')
                     : null,
                 'source' => 'parser.gun.az',
-            ], ($hideStalePrices && $referenceSnapshotDateStr !== null) ? [
-                'reference_snapshot_date' => $referenceSnapshotDateStr,
-            ] : []),
-            'rows' => $rows->map(function ($r) use ($deltasByPosition, $hideStalePrices, $referenceSnapshotDateStr): array {
-                $formatted = $this->formatCityAverageRow($r, $deltasByPosition[(int) ($r->position_id ?? 0)] ?? null);
-                if ($hideStalePrices
-                    && $referenceSnapshotDateStr !== null
-                    && ! $this->snapshotDateMatchesReferenceDay($r->snapshot_date ?? null, $referenceSnapshotDateStr)) {
-                    return $this->stripCityAverageRowPricesWhenNotReferenceDay($formatted);
-                }
-
-                return $formatted;
-            })->values()->all(),
+            ],
+            'rows' => $rows->map(fn ($r) => $this->formatCityAverageRow($r, $deltasByPosition[(int) ($r->position_id ?? 0)] ?? null))->values()->all(),
         ];
     }
 
